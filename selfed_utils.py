@@ -20,8 +20,9 @@ def join_all_channels():
             slack.channels.join(channel['name'])
 
 
-def store_history(chan_id):
+def store_history(chan_id, oldest=None):
     # Todo: add some cheking for overwriting here
+    # Todo: add debug output
     def add_chan_id(d):
         d['channel_id'] = chan_id
         return d
@@ -30,8 +31,11 @@ def store_history(chan_id):
     latest = None
     collection = db['history']
     while response is None or response.body["has_more"]:
-        response = slack.channels.history(chan_id, latest=latest)
+        response = slack.channels.history(
+            chan_id, latest=latest, oldest=oldest)
         messages = response.body['messages']
+        if not messages:
+            continue
         latest = messages[-1]['ts']
         collection.insert_many(list(map(add_chan_id, messages)))
 
@@ -47,14 +51,31 @@ def store_all_history():
 
 
 def update_history():
-    # Todo: to be implemented
-    pass
+    # Todo: проверь, что не делаешь херни с сортировкой
+    # Todo: добавь индексы в бд
+    # Todo: фикс случая, когда в бд нет ни одной записи на счёт канала
+    collection = db['channels']
+    response = slack.channels.list()
+    channels = response.body['channels']
+    for channel in channels:
+        if collection.find_one({'id': channel['id']}) is None:
+            collection.insert_one(
+                {'id': channel['id'], 'name': channel['name']})
+            store_history(channel['id'])
+        else:
+            cursor = db['history'].find(
+                modifiers={'$orderby': {"ts": -1}}, limit=1, projection=['ts'])
+            ts = cursor.next()['ts']
+            cursor.close()
+            store_history(channel['id'], ts)
+
 
 commands = {
     'test': test_api,
     'join_all': join_all_channels,
     'dump': store_all_history,
-    'update': update_history
+    'update': update_history,
+    #'users': get_users
 }
 
 # Todo: be aware of timeouts
