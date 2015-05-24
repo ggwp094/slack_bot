@@ -1,0 +1,6 @@
+[slack]
+token = <toke_here>
+[mongo]
+URI = mongodb://127.0.0.1
+database = history
+
